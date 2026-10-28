@@ -1,0 +1,55 @@
+# RUN THIS CELL AFTER the model evaluation, feature importance, and recommendation code.
+# It creates the CSV files used by the Streamlit dashboard.
+
+import pandas as pd
+import numpy as np
+from sklearn.base import clone
+
+# Refit the selected model on all available labelled rows for the dashboard demo.
+# Keep your earlier untouched test metrics as the honest evaluation result.
+deployment_model = clone(pipelines[best_name])
+deployment_model.fit(X, y)
+
+all_prob = deployment_model.predict_proba(X)[:, 1]
+all_pred = deployment_model.predict(X)
+
+dashboard_data = X.copy()
+dashboard_data["Actual_Churn"] = y.map({0: "No", 1: "Yes"}).values
+dashboard_data["Predicted_Churn"] = pd.Series(all_pred, index=X.index).map(
+    {0: "No", 1: "Yes"}
+).values
+dashboard_data["Churn_Probability"] = all_prob
+dashboard_data["Risk_Level"] = pd.cut(
+    all_prob,
+    bins=[-0.001, 0.30, 0.60, 1.001],
+    labels=["Low", "Medium", "High"]
+).astype(str)
+
+# Reuse the recommendation function from the notebook if it exists.
+if "recommend_retention_action" in globals():
+    dashboard_data["Retention_Recommendation"] = X.apply(
+        recommend_retention_action, axis=1
+    )
+else:
+    dashboard_data["Retention_Recommendation"] = (
+        "Review customer feedback and available retention options"
+    )
+
+# If the original customer ID was dropped from X, attach it for display only.
+if "customerID" in df.columns and len(df) == len(dashboard_data):
+    dashboard_data.insert(0, "customerID", df["customerID"].values)
+elif "CustomerID" in df.columns and len(df) == len(dashboard_data):
+    dashboard_data.insert(0, "CustomerID", df["CustomerID"].values)
+
+dashboard_data.to_csv("dashboard_data.csv", index=False)
+cv_df.to_csv("model_comparison.csv", index=False)
+test_results.to_csv("final_test_metrics.csv", index=False)
+importance_df.to_csv("feature_importance.csv", index=False)
+
+print("Dashboard files created successfully:")
+print("- dashboard_data.csv")
+print("- model_comparison.csv")
+print("- final_test_metrics.csv")
+print("- feature_importance.csv")
+print("\nImportant: test metrics above remain based on the held-out test set.")
+print("The dashboard table uses a deployment model refitted on all labelled rows.")
